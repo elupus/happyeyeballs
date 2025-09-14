@@ -55,12 +55,13 @@ def default_socket_factory(
     type: socket.SocketKind | int = -1,
     proto: int = -1,
 ) -> socket.socket:
+    """Default socket provider"""
     return socket.socket(family=family, type=type, proto=proto)
 
 
 def connect_host(
-    host: str,
-    port: int,
+    host: bytes | str | None,
+    port:  bytes | str | int | None,
     *,
     family: socket.AddressFamily | int = 0,
     type: socket.SocketKind | int = 0,
@@ -70,6 +71,8 @@ def connect_host(
     timeout: float = 0.0,
     socket_factory: SocketFactory = default_socket_factory,
 ) -> socket.socket:
+    """Connect to given host and port, using happy eyeball algorithm"""
+
     addresses = socket.getaddrinfo(
         host, port, family=family, type=type, proto=proto, flags=flags
     )
@@ -92,6 +95,8 @@ def connect_addresses(
     timeout: float = 0.0,
     socket_factory: SocketFactory = default_socket_factory,
 ) -> socket.socket:
+    """Connect to given list of addresses, using happy eyeball algorithm"""
+
     selector = selectors.DefaultSelector()
 
     exceptions: list[BaseException] = []
