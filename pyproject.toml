@@ -6,6 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Joakim Plate", email = "elupus@ecce.se" }
 ]
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = []
 
