@@ -1,12 +1,11 @@
 import socket
 import selectors
-from typing import cast, Iterator, Iterable
+from typing import cast, Iterator, Iterable, Callable
 import logging
 import errno
 import contextlib
 import time
 from collections import defaultdict, deque
-
 
 type AddressTuple = tuple[str, int] | tuple[str, int, int, int] | tuple[int, bytes]
 
@@ -16,6 +15,10 @@ type AddressInfoTuple = tuple[
     int,
     str,
     AddressTuple,
+]
+
+type SocketFactory = Callable[
+    [socket.AddressFamily | int, socket.SocketKind | int, int], socket.socket
 ]
 
 LOG = logging.getLogger(__name__)
@@ -47,6 +50,14 @@ def interleave_family(infos: list[AddressInfoTuple]):
             break
 
 
+def default_socket_factory(
+    family: socket.AddressFamily | int = -1,
+    type: socket.SocketKind | int = -1,
+    proto: int = -1,
+) -> socket.socket:
+    return socket.socket(family=family, type=type, proto=proto)
+
+
 def connect_host(
     host: str,
     port: int,
@@ -57,13 +68,17 @@ def connect_host(
     flags: int = 0,
     delay: float = 0.3,
     timeout: float = 0.0,
+    socket_factory: SocketFactory = default_socket_factory,
 ) -> socket.socket:
     addresses = socket.getaddrinfo(
         host, port, family=family, type=type, proto=proto, flags=flags
     )
     try:
         return connect_addresses(
-            interleave_family(addresses), timeout=timeout, delay=delay
+            interleave_family(addresses),
+            timeout=timeout,
+            delay=delay,
+            socket_factory=socket_factory,
         )
     except Exception as exc:
         exc.add_note(f"Host: {host}, Port: {port}")
@@ -75,6 +90,7 @@ def connect_addresses(
     *,
     delay: float = 0.3,
     timeout: float = 0.0,
+    socket_factory: SocketFactory = default_socket_factory,
 ) -> socket.socket:
     selector = selectors.DefaultSelector()
 
@@ -94,13 +110,14 @@ def connect_addresses(
                 LOG.debug("Adding potential %s after %s seconds", info, now - starting)
 
                 try:
-                    fd = socket.socket(info[0], info[1], info[2])
+                    fd = socket_factory(info[0], info[1], info[2])
                 except BaseException as exc:
                     exceptions.append(exc)
                 else:
                     try:
                         fd.setblocking(False)
                         fd.connect(address)
+                        fd.setblocking(True)
                         return fd
                     except BlockingIOError:
                         selector.register(fd, selectors.EVENT_WRITE, address)
@@ -142,6 +159,7 @@ def connect_addresses(
                     error = fd.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
                     if error:
                         raise OSError(error, errno.errorcode.get(error, "Unknown"))
+                    fd.setblocking(True)
                     return fd
                 except BaseException as exc:
                     exc.add_note(f"Address: {address}")
