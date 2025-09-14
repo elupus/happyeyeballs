@@ -1,0 +1,14 @@
+[project]
+name = "happyeyeballs"
+version = "0.1.0"
+description = "Basic implementation of happy eyeballs with non blocking sockets"
+readme = "README.md"
+authors = [
+    { name = "Joakim Plate", email = "elupus@ecce.se" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
