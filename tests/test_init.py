@@ -13,8 +13,16 @@ from happyeyeballs import interleave_family
             [(AddressFamily.AF_INET, 1), (AddressFamily.AF_INET6, 2)],
         ),
         (
-            [(AddressFamily.AF_INET, 1), (AddressFamily.AF_INET, 3), (AddressFamily.AF_INET6, 2)],
-            [(AddressFamily.AF_INET, 1), (AddressFamily.AF_INET6, 2), (AddressFamily.AF_INET, 3)],
+            [
+                (AddressFamily.AF_INET, 1),
+                (AddressFamily.AF_INET, 3),
+                (AddressFamily.AF_INET6, 2),
+            ],
+            [
+                (AddressFamily.AF_INET, 1),
+                (AddressFamily.AF_INET6, 2),
+                (AddressFamily.AF_INET, 3),
+            ],
         ),
     ],
 )

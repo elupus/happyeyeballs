@@ -61,7 +61,7 @@ def default_socket_factory(
 
 def connect_host(
     host: bytes | str | None,
-    port:  bytes | str | int | None,
+    port: bytes | str | int | None,
     *,
     family: socket.AddressFamily | int = 0,
     type: socket.SocketKind | int = 0,
