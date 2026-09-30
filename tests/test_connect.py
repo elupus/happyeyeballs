@@ -1,4 +1,5 @@
 import errno
+import selectors
 import socket
 import threading
 import time
@@ -313,3 +314,49 @@ def test_real_localhost() -> None:
         with connect_host("127.0.0.1", port, timeout=5) as sock:
             assert sock.getpeername() == ("127.0.0.1", port)
             assert sock.getblocking()
+
+
+@pytest.mark.parametrize("behaviour", ["ok_now", "pending_ok"])
+def test_factory_timeout_restored(behaviour: str) -> None:
+    factory = Factory({ADDR_1: behaviour})
+
+    def timeout_factory(family: int, type: int, proto: int) -> socket.socket:
+        sock = factory(family, type, proto)
+        sock.settimeout(3.5)
+        return sock
+
+    with connect_addresses([info(ADDR_1)], socket_factory=timeout_factory) as sock:
+        assert sock.gettimeout() == 3.5
+
+
+@pytest.mark.parametrize("delay", [0, 0.005, -1])
+def test_invalid_delay(delay: float) -> None:
+    with pytest.raises(ValueError):
+        connect(Factory({}), ADDR_1, delay=delay)
+
+
+def test_connect_hosts_skips_duplicates() -> None:
+    factory = Factory({}, default="refused_now")
+    with pytest.raises(FailedToConnect) as exc_info:
+        connect_hosts(
+            ["192.0.2.1", "192.0.2.1", "2001:db8::1"],
+            8009,
+            socket_factory=factory,
+            all_errors=True,
+        )
+    assert len(exc_info.value.exceptions) == 2
+    assert [sock.address[0] for sock in factory.sockets] == [
+        "192.0.2.1",
+        "2001:db8::1",
+    ]
+
+
+def test_register_failure_closes_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing_register(*args: Any, **kwargs: Any) -> None:
+        raise ValueError("too many sockets")
+
+    monkeypatch.setattr(selectors.DefaultSelector, "register", failing_register)
+    factory = Factory({ADDR_1: "pending_ok"})
+    with pytest.raises(ValueError):
+        connect(factory, ADDR_1)
+    factory.assert_others_closed(None)

@@ -25,6 +25,7 @@ type SocketFactory = Callable[
 LOG = logging.getLogger(__name__)
 
 DEFAULT_DELAY = 0.25
+MIN_DELAY = 0.01
 
 
 class FailedToConnect(ExceptionGroup[OSError]):
@@ -113,9 +114,9 @@ def connect_hosts(
 ) -> socket.socket:
     """Connect to any of the given hosts on port, using happy eyeball algorithm
 
-    Each host is resolved using getaddrinfo, hosts that fail to resolve are
-    skipped. The resolved addresses are interleaved by family and connected
-    to as described in connect_addresses.
+    Each host is resolved using getaddrinfo, one at a time, hosts that fail
+    to resolve are skipped. The resolved addresses, without duplicates, are
+    interleaved by family and connected to as described in connect_addresses.
 
     The timeout only bounds the connection attempts, name resolution is
     not bounded by it.
@@ -124,15 +125,16 @@ def connect_hosts(
     FailedToConnect with all of them if all_errors is set.
     """
 
-    infos: list[AddressInfoTuple] = []
+    # keyed on everything but canonical name to skip duplicates
+    infos: dict[tuple[object, ...], AddressInfoTuple] = {}
     unresolved: list[OSError] = []
     for host in hosts:
         try:
-            infos.extend(
-                socket.getaddrinfo(
-                    host, port, family=family, type=type, proto=proto, flags=flags
-                )
-            )
+            for info in socket.getaddrinfo(
+                host, port, family=family, type=type, proto=proto, flags=flags
+            ):
+                family_, type_, proto_, _, address = info
+                infos.setdefault((family_, type_, proto_, address), info)
         except socket.gaierror as exc:
             exc.add_note(f"Failed to resolve host: {host!r}")
             unresolved.append(exc)
@@ -144,7 +146,7 @@ def connect_hosts(
 
     try:
         return connect_addresses(
-            interleave_family(infos),
+            interleave_family(infos.values()),
             delay=delay,
             timeout=timeout,
             all_errors=all_errors,
@@ -168,8 +170,11 @@ def connect_addresses(
 
     Addresses are attempted in the given order. A new attempt is started
     when the previous one fails, or after delay seconds while it is still
-    pending. The first connected socket is returned, in blocking mode with
-    no timeout set, call settimeout() on it as needed.
+    pending. The first connected socket is returned, with the timeout it
+    had when created by socket_factory restored (for the default factory
+    that is socket.getdefaulttimeout(), normally None meaning blocking).
+
+    delay must be at least MIN_DELAY (10 ms) as required by RFC 8305.
 
     timeout is the overall time limit for connecting, None means no limit.
 
@@ -184,6 +189,8 @@ def connect_addresses(
 
     if timeout is not None and timeout <= 0:
         raise ValueError("timeout must be positive or None")
+    if delay < MIN_DELAY:
+        raise ValueError(f"delay must be at least {MIN_DELAY} seconds")
 
     # errors keyed by address index, since attempts
     # can fail in a different order than started
@@ -225,10 +232,13 @@ def connect_addresses(
                         # attempt to add a new socket directly
                         continue
 
-                    sock, connected = started
+                    sock, sock_timeout, connected = started
                     if connected:
                         return sock
-                    selector.register(sock, selectors.EVENT_WRITE, (index, info[4]))
+                    with _close_on_error(sock):
+                        selector.register(
+                            sock, selectors.EVENT_WRITE, (index, info[4], sock_timeout)
+                        )
 
             # if there are no pending sockets,
             # there is nothing more to check, so
@@ -242,11 +252,11 @@ def connect_addresses(
             wait = _wait_time(None if exhausted else delay, deadline)
             for key, _ in selector.select(wait):
                 sock = cast(socket.socket, key.fileobj)
-                index, address = key.data
+                index, address, sock_timeout = key.data
                 selector.unregister(sock)
 
                 with _collect_error(exceptions, index, address):
-                    _finish_connect(sock)
+                    _finish_connect(sock, sock_timeout)
                     return sock
 
     if not exceptions:
@@ -294,32 +304,33 @@ def _start_connect(
     info: AddressInfoTuple,
     socket_factory: SocketFactory,
     exceptions: dict[int, OSError],
-) -> tuple[socket.socket, bool] | None:
+) -> tuple[socket.socket, float | None, bool] | None:
     """Start a non-blocking connect
 
-    Returns the socket and whether it's already connected,
-    or None if the attempt failed and the error was collected.
+    Returns the socket, its original timeout and whether it's already
+    connected, or None if the attempt failed and the error was collected.
     """
     family, sock_type, proto, _, address = info
     with _collect_error(exceptions, index, address):
         sock = socket_factory(family, sock_type, proto)
         with _close_on_error(sock):
+            sock_timeout = sock.gettimeout()
             sock.setblocking(False)
             try:
                 sock.connect(address)
             except BlockingIOError:
-                return sock, False
-            sock.setblocking(True)
-        return sock, True
+                return sock, sock_timeout, False
+            sock.settimeout(sock_timeout)
+        return sock, sock_timeout, True
     return None
 
 
-def _finish_connect(sock: socket.socket) -> None:
+def _finish_connect(sock: socket.socket, sock_timeout: float | None) -> None:
     """Check result of a pending connect on a writable socket"""
     with _close_on_error(sock):
         if error := sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR):
             raise OSError(error, os.strerror(error))
-        sock.setblocking(True)
+        sock.settimeout(sock_timeout)
 
 
 def _wait_time(delay: float | None, deadline: float | None) -> float | None:

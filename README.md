@@ -15,7 +15,7 @@ from happyeyeballs import connect_host
 
 # Connect to a host and port using the happy eyeballs algorithm
 with connect_host("example.com", 80, timeout=4.0) as sock:
-    # The returned socket is blocking without a timeout, set one as needed
+    # The returned socket keeps its default timeout (normally blocking), set one as needed
     sock.settimeout(10.0)
     sock.send(b"GET / HTTP/1.0\r\nHost: example.com\r\n\r\n")
     response = sock.recv(4096)
@@ -23,7 +23,8 @@ with connect_host("example.com", 80, timeout=4.0) as sock:
 
 To connect to any of several hosts, for example addresses of the same
 device found via mDNS, use `connect_hosts`. Hosts that fail to resolve are
-skipped, and the addresses of the remaining hosts are interleaved by family:
+skipped, duplicate addresses are removed, and the addresses of the remaining
+hosts are interleaved by family:
 
 ```python
 from happyeyeballs import connect_hosts
@@ -40,8 +41,8 @@ which attempts them in the given order.
   `None` (the default) for no limit. Must be positive. Name resolution is not
   bounded by the timeout.
 - `delay`: seconds to wait for a pending attempt before starting the next
-  one (default 0.25, as recommended by RFC 8305). An attempt that fails starts
-  the next one immediately.
+  one (default 0.25, as recommended by RFC 8305, minimum 0.01). An attempt
+  that fails starts the next one immediately.
 - `type`: defaults to `socket.SOCK_STREAM`.
 - `all_errors`: see below.
 
