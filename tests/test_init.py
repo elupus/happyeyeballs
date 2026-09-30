@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 from socket import AddressFamily
 
@@ -26,6 +28,6 @@ from happyeyeballs import interleave_family
         ),
     ],
 )
-def test_interleave(input, output):
+def test_interleave(input: list[Any], output: list[Any]) -> None:
     result = list(interleave_family(input))
     assert result == output

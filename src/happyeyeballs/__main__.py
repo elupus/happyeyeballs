@@ -1,18 +1,19 @@
 import logging
-import socket
 from . import connect_host
 
 LOG = logging.getLogger(__name__)
 
 
-def main():
+def main() -> None:
     logging.basicConfig(level=logging.DEBUG)
     LOG.info("Starting")
 
-    with connect_host(
-        "localhost", 80, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP, timeout=0
-    ):
+    with connect_host("::1", 80):
+        LOG.info("Connected")
+
+    with connect_host("localhost", 80):
         LOG.info("Connected")
 
 
-main()
+if __name__ == "__main__":
+    main()
