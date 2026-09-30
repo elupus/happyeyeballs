@@ -1,6 +1,7 @@
 import socket
 import selectors
-from typing import cast, Callable, Iterable, Iterator, NoReturn
+from typing import cast, NoReturn
+from collections.abc import Callable, Iterable, Generator
 import logging
 import os
 import time
@@ -30,7 +31,7 @@ class FailedToConnect(ExceptionGroup[OSError]):
     """Raised with all collected errors when called with all_errors=True"""
 
 
-def interleave_family(infos: Iterable[AddressInfoTuple]) -> Iterator[AddressInfoTuple]:
+def interleave_family(infos: Iterable[AddressInfoTuple]) -> Generator[AddressInfoTuple]:
     """Interleave the address families of the given info while retaining order"""
 
     grouped: dict[int, deque[AddressInfoTuple]] = defaultdict(deque)
@@ -255,7 +256,7 @@ def connect_addresses(
 
 
 @contextmanager
-def _pending_sockets() -> Iterator[selectors.BaseSelector]:
+def _pending_sockets() -> Generator[selectors.BaseSelector]:
     """Selector for pending sockets, closing any still pending on exit"""
     selector = selectors.DefaultSelector()
     try:
@@ -267,7 +268,7 @@ def _pending_sockets() -> Iterator[selectors.BaseSelector]:
 
 
 @contextmanager
-def _close_on_error(sock: socket.socket) -> Iterator[None]:
+def _close_on_error(sock: socket.socket) -> Generator[None]:
     """Close socket on any error"""
     try:
         yield
@@ -279,7 +280,7 @@ def _close_on_error(sock: socket.socket) -> Iterator[None]:
 @contextmanager
 def _collect_error(
     exceptions: dict[int, OSError], index: int, address: AddressTuple
-) -> Iterator[None]:
+) -> Generator[None]:
     """Collect socket errors for the address at index"""
     try:
         yield
